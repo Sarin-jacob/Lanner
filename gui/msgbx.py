@@ -2,8 +2,8 @@
 #%%
 import os
 import re
-from PyQt5.QtWidgets import QDialog, QLabel, QWidget,QComboBox, QPushButton, QVBoxLayout, QHBoxLayout, QApplication, QSizePolicy,QTextEdit, QShortcut, QMenu, QFileDialog
-
+from PyQt5.QtWidgets import QDialog, QLabel ,QWidget,QComboBox, QPushButton, QVBoxLayout, QHBoxLayout, QApplication, QSizePolicy,QTextEdit, QShortcut, QMenu, QFileDialog,QAction,QMenuBar
+from PyQt5 import uic
 from PyQt5.QtGui import QIcon, QFont,QKeySequence
 from PyQt5.QtCore import Qt,QEvent,QTimer
 
@@ -17,8 +17,9 @@ class MyMessageBox(QDialog):
         self.folders = []
         
         # Message Label
+        self.message=message
         self.messageLabel = QLabel(message)
-        self.messageLabel.setAlignment(Qt.AlignCenter)
+        self.messageLabel.setAlignment(Qt.AlignVCenter)
         self.messageLabel.setFont(QFont('Arial', 12))
         self.messageLabel.setMaximumWidth(800)
         self.messageLabel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -93,6 +94,7 @@ class MyMessageBox(QDialog):
         menu = QMenu(self)
         add_file_action = menu.addAction("Add File")
         add_folder_action = menu.addAction("Add Folder")
+        copy_action = menu.addAction("Copy")
         action = menu.exec_(self.mapToGlobal(point))
         if action == add_file_action:
             self.insert_file()
@@ -100,6 +102,12 @@ class MyMessageBox(QDialog):
         elif action == add_folder_action:
             # self.add_folder()
             self.insert_folder()
+        elif action==copy_action:
+            self.copyit()
+
+    def copyit(self):
+        clipboard = QApplication.clipboard()
+        clipboard.setText(self.message)
 
 
     def handleInputChanged(self):
@@ -130,8 +138,7 @@ class MyMessageBox(QDialog):
             folder_path = folder_dialog.selectedFiles()[0]
             self.folders.append(folder_path)
 
-    def getResult(self):
-        return self.inputInput.toPlainText()
+    
     
     def handleTextChanged(self):
         self.timer.start(500) 
@@ -195,11 +202,10 @@ def showMessageBox(message:str, title:str,icon="icon.png"):
     app = QApplication([])
     msgBox = MyMessageBox(message, title,icon)
     if msgBox.exec_() == QDialog.Accepted:
-        return msgBox.getResult(),msgBox.files,msgBox.folders
+        return msgBox.message,msgBox.files,msgBox.folders
     else:
         return None,None,None
 #%%
-
 class MyDialog(QDialog):
     def __init__(self, options,title,icon, parent=None):
         super().__init__(parent)
@@ -207,41 +213,42 @@ class MyDialog(QDialog):
         self.setWindowIcon(QIcon(icon))
         self.files = []
         self.folders = []
-        # Create the label and combo box for the options
-        options_label = QLabel("To:")
-        self.options_combo = QComboBox()
-        self.options_combo.setEditable(True)
+
+        menuBar = QMenuBar(self)
+
+        uic.loadUi("msg.ui",self)
+
+        self.llayout.addWidget(menuBar)
+        # Create a new menu and add it to the menu bar
+        fileMenu = menuBar.addMenu('&Menu')
+
+        # Create new menu items and add them to the menu
+        newAction = QAction('&Add Files', self)
+        newAction.setShortcut('Ctrl+I')
+        newAction.triggered.connect(self.insert_file)
+        fileMenu.addAction(newAction)
+
+        openAction = QAction('&Add Folders', self)
+        openAction.setShortcut('Ctrl+O')
+        openAction.triggered.connect(self.insert_folder)
+        fileMenu.addAction(openAction)
+
+        saveAction = QAction('&Save', self)
+        saveAction.setShortcut('Ctrl+S')
+        fileMenu.addAction(saveAction)
+
+        exitAction = QAction('&Exit', self)
+        exitAction.setShortcut('Ctrl+Q')
+        exitAction.triggered.connect(self.close)
+        fileMenu.addAction(exitAction)
+
+
+
         self.options_combo.addItems(options)
-        self.options_combo.setInsertPolicy(QComboBox.InsertAtBottom)
+        self.message_edit.installEventFilter(self)
+        self.listView.hide()
+        self.pathLabel.hide()
 
-        # Create the text edit for the message
-        self.message_edit = QTextEdit()
-        self.message_edit.setPlaceholderText("Enter message or drag and drop files here, use ctlr+enter to send message")
-        # self.message_edit.setDragEnabled(True)
-        self.message_edit.setAcceptDrops(True)
-        # self.message_edit.installEventFilter(self)
-        
-        # Create the send button
-        self.send_button = QPushButton("Send")
-        self.send_button.setDefault(True)
-
-        # Create the layout
-        options_layout = QHBoxLayout()
-        options_layout.addWidget(options_label)
-        options_layout.addWidget(self.options_combo)
-
-        message_layout = QVBoxLayout()
-        message_layout.addWidget(self.message_edit)
-        message_layout.addWidget(self.send_button)
-
-        layout = QVBoxLayout()
-        layout.addLayout(options_layout)
-        layout.addLayout(message_layout)
-
-        # Set the layout
-        self.setLayout(layout)
-
-        # Connect the signals and slots
         self.send_button.clicked.connect(self.accept)
         self.shortcut = QShortcut(QKeySequence('Ctrl+Return'), self)
         self.shortcut.activated.connect(self.accept)
@@ -253,16 +260,11 @@ class MyDialog(QDialog):
         self.message_edit.textChanged.connect(self.handleTextChanged)
         self.timer = QTimer()
         self.timer.setSingleShot(True)
-        self.timer.timeout.connect(self.handleTimerTimeout)  
-
-        self.pathWidget = QWidget()
-        self.pathLayout = QVBoxLayout()
-        self.pathLabel = QLabel("Files Attached:")
-        self.pathListLabel = QLabel()
-        self.pathLayout.addWidget(self.pathLabel)
-        self.pathLayout.addWidget(self.pathListLabel)
-        self.pathWidget.setLayout(self.pathLayout)
-        self.pathWidget.hide()  
+        self.timer.timeout.connect(self.handleTimerTimeout) 
+    
+       
+    
+    
     
     def show_context_menu(self, point):
         menu = QMenu(self)
@@ -283,6 +285,11 @@ class MyDialog(QDialog):
         if file_dialog.exec_():
             file_path = file_dialog.selectedFiles()[0]
             self.files.append(file_path)
+        if self.files or self.folders:
+            ad="\n".join(self.files)+"\n".join(self.folders)
+            self.listView.setText(ad)
+            self.pathLabel.show()
+            self.listView.show()
             # self.message_edit.setText("\n".join(self.files))
 
     def insert_folder(self):
@@ -291,6 +298,11 @@ class MyDialog(QDialog):
         if folder_dialog.exec_():
             folder_path = folder_dialog.selectedFiles()[0]
             self.folders.append(folder_path)
+        if self.files or self.folders:
+            ad="\n".join(self.files)+"\n".join(self.folders)
+            self.listView.setText(ad)
+            self.pathLabel.show()
+            self.listView.show()
             # self.message_edit.setText("\n".join(self.folders))
 
 
@@ -306,8 +318,6 @@ class MyDialog(QDialog):
     
     def handleTimerTimeout(self):
         text = self.message_edit.toPlainText()
-        # matches = re.findall(r"file:///\S+", text)
-        # pat                 =r"file:///[-\w,\s/\\:]+\.[A-Za-z0-9.]{1,11}|file:///[-\w,\s/\\:]+\S"
         matches = re.findall(r"file:///[-\w,\s/\\:]+\.[A-Za-z0-9.]{1,11}|file:///[-\w,\s/\\:]+\S", text)
         if len(matches)!=0:
             for match in matches:
@@ -316,14 +326,18 @@ class MyDialog(QDialog):
                     self.files.append(path)
                 elif os.path.isdir(path):
                     self.folders.append(path)
-                text = text.replace(match, '')
+                try:
+                    text = text.replace(match+'\n', '')
+                except:
+                    text = text.replace(match, '')
             self.message_edit.setPlainText(text)
 
         if self.files or self.folders:
             ad="\n".join(self.files)+"\n".join(self.folders)
-            self.pathListLabel.setText(ad)
-            self.pathWidget.show()
-        
+            self.listView.setText(ad)
+            self.pathLabel.show()
+            self.listView.show()
+     
 
 def message_box(options:list,title:str,icon="icon.png"):
     app = QApplication([])
